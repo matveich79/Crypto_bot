@@ -144,27 +144,28 @@ def KC_getCurrenciesPairs(market):
 
 
 
-def CompareGraphs(dfMain, secondDF, rowRange):
+def CompareGraphs(dfMain, secondDF, rowRange, variance):
     #graph1 and 2 have to be in pandas data frame format.
     #Aprender como coger y guardar los datos de MYSQL desde python
     #Del grafico 1 seleccionamos el final porque queremos predecir el futuro de ese y hacemos un "for" loop con los segundos.
     #Seleccionar el valor mas alto y el mas bajo en un cierto intervalo de tiempo
     #Porcentuarlos siendo el mas alto 100 y el mas bajo 0 e interpolar el resto de valores: (Valor-Min)/(Max-Min) = valor interpolado
-    
+
     lowestDifferenceOnSecondDF = {'time':'', 'difference':100.0}
 
     #This function returns a list with the first sampleDF's date 
-    def GetPercentageDifference(dfMain, secondDF, rowRange):
-        #This function creates a list with all :
-        def CreatePercentageList(dataFrame, rowRange):
-            sampleDF = dataFrame.iloc[:rowRange]
+    def GetPercentageDifference(dfMain, secondDF, rowRange, variance):
+        #This function creates a list with all the values of the open column in percentage:
+
+        def CreatePercentageList(dataFrame, rowRange, variance):
+            sampleDF = dataFrame.iloc[variance:rowRange + variance]
             mainColumnOpen = sampleDF['open']
             maxOpenID = mainColumnOpen.idxmax()
             minOpenID = mainColumnOpen.idxmin()
 
             mainPercentList = []
             for x in range(rowRange):
-                percentConversion = (mainColumnOpen[x] - mainColumnOpen[minOpenID])/(mainColumnOpen[maxOpenID] - mainColumnOpen[minOpenID]) * 100
+                percentConversion = (mainColumnOpen[x + variance] - mainColumnOpen[minOpenID])/(mainColumnOpen[maxOpenID] - mainColumnOpen[minOpenID]) * 100
                 mainPercentList.append(percentConversion)
 
             #Add percentage column to data frame:
@@ -172,8 +173,8 @@ def CompareGraphs(dfMain, secondDF, rowRange):
 
             return mainPercentList
 
-        listMain = CreatePercentageList(dfMain, rowRange)
-        listCompare = CreatePercentageList(secondDF, rowRange)
+        listMain = CreatePercentageList(dfMain, rowRange, 0)
+        listCompare = CreatePercentageList(secondDF, rowRange, variance)
 
         differSum = 0.0
         for x in range(rowRange):
@@ -181,30 +182,30 @@ def CompareGraphs(dfMain, secondDF, rowRange):
             difference = abs(difference)
             differSum += difference
         averagePercentage = differSum/rowRange
-        print(averagePercentage)
+        #print(averagePercentage)
         
-        result = [secondDF.at[0, 'time'], averagePercentage]
-        print('Result:')
-        print(result)
+        result = [secondDF.at[variance, 'time'], averagePercentage]
+        #print('Result:')
+        #print(result)
         return result
     
-    #for x in range(variance):
-    time_Difference = GetPercentageDifference(dfMain, secondDF, rowRange)
+    for x in range(variance + 1):
+        time_Difference = GetPercentageDifference(dfMain, secondDF, rowRange, x)
 
-    if time_Difference[1] < lowestDifferenceOnSecondDF['difference']:
-        lowestDifferenceOnSecondDF['difference'] = time_Difference[1]
-        print(time_Difference[0])
-        lowestDifferenceOnSecondDF['time'] = time_Difference[0]
-    print(lowestDifferenceOnSecondDF)
+        if time_Difference[1] < lowestDifferenceOnSecondDF['difference']:
+            lowestDifferenceOnSecondDF['difference'] = time_Difference[1]
+            print(time_Difference[0])
+            lowestDifferenceOnSecondDF['time'] = time_Difference[0]
+        #print(lowestDifferenceOnSecondDF)
     
-
+    print(lowestDifferenceOnSecondDF)
     return lowestDifferenceOnSecondDF
 
 
 
 table1 = MySQL_getTable('CARR-USDT')
 table2 = MySQL_getTable('BTC-USDT')
-CompareGraphs(table1, table2, 30)
+CompareGraphs(table1, table2, 30, 200)
 
 #KC_getHistory('BTC-USDT')
 #KC_getMarketsList()
