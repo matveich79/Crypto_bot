@@ -1,5 +1,3 @@
-#from kucoin.client import Client
-#client = Client(api_key, api_secret, api_passphrase)
 
 import requests
 import numpy as np
@@ -9,15 +7,29 @@ import openpyxl
 from datetime import datetime,timedelta
 import mysql.connector
 
-#Connect with mysql server
+#To importe from previous directory where there is mysql connection password:
+import os,sys,inspect
+current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
+import ProtectedInfo as PI
+
+
 #print(dir(mysql.connector))
-crypDB = mysql.connector.connect(host='localhost', user='root', password='toor', database='crypto_data')
 
-#VARIABLES--------------------------------------------------------------------------------------------------------------------------
 
-#FUNCTIONS----------------------------------------------------------------------------------------------------------------------------
+#GLOBAL VARIABLES--------------------------------------------------------------------------------------------------------------------------
+
+#Connect with mysql server
+crypDB = mysql.connector.connect(host=PI.myHost, user=PI.myUser, password=PI.myPassword, database=PI.myDatabase)
+
+
+
+#FUNCTIONS---------------------------------------------------------------------------------------------------------------------------------
 
 def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1day"):
+    #This function gets history data from Kucoin API in candle-sticks format and saves it in a database on MySQL. If the db already exists, gets updated.
 
     apiUrl = "https://api.kucoin.com"
     
@@ -25,7 +37,7 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
     parameters = {"symbol":sym, "startAt":timeStart, "endAt":timeEnd, "type":candleTime}
     data = requests.get(f"{apiUrl}/api/v1/market/candles", params = parameters)
     
-    #Transform into data frame:
+    #Transform request into a data frame:
     df = pd.DataFrame(data.json(), columns = ["data"])
     #This gives only one column and all the data on each row into a list format. Print(df) if want to see it.
 
@@ -34,11 +46,11 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
     for listGet in range(len(df)):
         listOfLists.append(df.at[listGet, 'data'])
     
-    #Transform the list of lists into a proper dataFrame:
+    #And then transform the list of lists into a proper dataFrame:
     columns = ["time","open","close","high","low","volume","turnover"]
     finalDF = pd.DataFrame(listOfLists, columns = columns)
 
-    finalDF.to_excel(f'{sym}_UnixTime.xlsx')
+    #finalDF.to_excel(f'{sym}_UnixTime.xlsx')
 
     #Change time from Unix format to date format:
     for row in range(len(finalDF)):
@@ -47,7 +59,7 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
     print(finalDF)
     #print(finalDF.at[2, 'time'])
 
-    finalDF.to_excel(f'{sym}.xlsx')
+    #finalDF.to_excel(f'{sym}.xlsx')
     
     #Create table in MySQL:
     #First change "-" to "_" as MySQL doesnot accept "-" on a table name
@@ -66,22 +78,21 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
             f"CREATE TABLE {symToSQL} (time DATETIME KEY, open FLOAT(40,20), close FLOAT(40,20), high FLOAT(40,20), low FLOAT(40,20), volume FLOAT(40,20), turnover FLOAT(40,20));"
             )
 
-    #If exception happens it should be because there is already a table with that name so we just update it:
+    #If exception happens it should be because there is already a table with same name so we just update it:
     except:
-        print(f'Table {symToSQL} already exists... probably.')
+        print(f'Probably table {symToSQL} already exists.')
 
+    #Save each row in the db:
     for row in range(len(finalDF)):
         listRow = df.at[row, 'data']
         listRow[0] = finalDF.at[row, 'time']
         val = tuple(listRow)
         sql = f"INSERT INTO {symToSQL} (time, open, close, high, low, volume, turnover) VALUES (%s, %s, %s, %s, %s, %s, %s);"
+        #We use "try" so if row already exists, doesn't give an error and keeps trying with every row in case there is new rows adding to the db:
         try:
             myCursor.execute(sql, val)
         except:
             pass
-    
-    #Order rows in sql?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
-    #myCursor.execute()
 
     #Commit to mysql:
     crypDB.commit()
@@ -120,6 +131,7 @@ def MySQL_getTable(sym = 'BTC-USDT'):
     #print(result[0][2])
 
     #print(df.iloc[:3])
+    
     print(f'Finished get table {symToSQL}')
     return df
 
@@ -138,107 +150,21 @@ def KC_getCurrenciesPairs(market):
     apiUrl = "https://api.kucoin.com"
     parameters = {"market":market}
     data = requests.get(f"{apiUrl}/api/v1/symbols", params = parameters)
-    df = pd.DataFrame(data.json())
+    df = pd.DataFrame(data.json(), columns = ['data'])
     print(df)
+    print(df.loc[0])
     return df
 
 
 
-def CompareGraphs(dfMain, secondDF, rowRange, variance):
-    #graph1 and 2 have to be in pandas data frame format.
-    #Aprender como coger y guardar los datos de MYSQL desde python
-    #Del grafico 1 seleccionamos el final porque queremos predecir el futuro de ese y hacemos un "for" loop con los segundos.
-    #Seleccionar el valor mas alto y el mas bajo en un cierto intervalo de tiempo
-    #Porcentuarlos siendo el mas alto 100 y el mas bajo 0 e interpolar el resto de valores: (Valor-Min)/(Max-Min) = valor interpolado
+#TESTING---------------------------------------------------------------------------------------------------------------------------------
 
-    lowestDifferenceOnSecondDF = {'time':'', 'difference':100.0}
+if __name__ == "__main__":
+    #table1 = MySQL_getTable('CARR-USDT')
+    #table2 = MySQL_getTable('BTC-USDT')
 
-    #This function returns a list with the first sampleDF's date 
-    def GetPercentageDifference(dfMain, secondDF, rowRange, variance):
-        #This function creates a list with all the values of the open column in percentage:
-
-        def CreatePercentageList(dataFrame, rowRange, variance):
-            sampleDF = dataFrame.iloc[variance:rowRange + variance]
-            mainColumnOpen = sampleDF['open']
-            maxOpenID = mainColumnOpen.idxmax()
-            minOpenID = mainColumnOpen.idxmin()
-
-            mainPercentList = []
-            for x in range(rowRange):
-                percentConversion = (mainColumnOpen[x + variance] - mainColumnOpen[minOpenID])/(mainColumnOpen[maxOpenID] - mainColumnOpen[minOpenID]) * 100
-                mainPercentList.append(percentConversion)
-
-            #Add percentage column to data frame:
-            #sampleDF['percentage'] = mainPercentList
-
-            return mainPercentList
-
-        listMain = CreatePercentageList(dfMain, rowRange, 0)
-        listCompare = CreatePercentageList(secondDF, rowRange, variance)
-
-        differSum = 0.0
-        for x in range(rowRange):
-            difference = listCompare[x] - listMain[x]
-            difference = abs(difference)
-            differSum += difference
-        averagePercentage = differSum/rowRange
-        #print(averagePercentage)
-        
-        result = [secondDF.at[variance, 'time'], averagePercentage]
-        #print('Result:')
-        #print(result)
-        return result
-    
-    for x in range(variance + 1):
-        time_Difference = GetPercentageDifference(dfMain, secondDF, rowRange, x)
-
-        if time_Difference[1] < lowestDifferenceOnSecondDF['difference']:
-            lowestDifferenceOnSecondDF['difference'] = time_Difference[1]
-            print(time_Difference[0])
-            lowestDifferenceOnSecondDF['time'] = time_Difference[0]
-        #print(lowestDifferenceOnSecondDF)
-    
-    print(lowestDifferenceOnSecondDF)
-    return lowestDifferenceOnSecondDF
-
-
-
-table1 = MySQL_getTable('CARR-USDT')
-table2 = MySQL_getTable('BTC-USDT')
-CompareGraphs(table1, table2, 30, 200)
-
-#KC_getHistory('BTC-USDT')
-#KC_getMarketsList()
-#KC_getCurrenciesPairs('DeFi')
+    #KC_getHistory('BTC-USDT')
+    #KC_getMarketsList()
+    KC_getCurrenciesPairs('DeFi')
     
 
-
-
-
-
-def Coinbase_getdata():
-    apiUrl = "https://api.pro.coinbase.com"
-
-    sym = "BTC-USD"
-
-    barSize = "86400" ### 86400 for days
-    timeEnd = datetime.now()
-    delta = timedelta(minutes = int(barSize)/60) #Minutes = barSize/60
-    timeStart = timeEnd - (300*delta)
-    timeStart = timeStart.isoformat()
-    timeEnd = timeEnd.isoformat()
-
-    parameters = {"start":timeStart, "end":timeEnd, "granularity":barSize}
-
-    data = requests.get(f"{apiUrl}/products/{sym}/candles", params = parameters, headers = {"content-type":"application/xml"})
-
-    df = pd.DataFrame(data.json(), columns = ["time","low","high","open","close","volume"])
-
-    df["date"] = pd.to_datetime(df["time"], unit="s")
-
-    df = df[["date","open","high","low","close","volume"]]
-    #df = df.dropna()
-    df.to_excel(f'{sym}_data.xlsx')
-    #print(data.text)
-    #print(df)
-    return df
