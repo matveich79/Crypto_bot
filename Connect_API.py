@@ -1,10 +1,11 @@
 
+from mysql.connector.connection_cext import HAVE_CMYSQL
 import requests
 import numpy as np
 import pandas as pd
 import time
-import openpyxl
-from datetime import datetime,timedelta
+#import openpyxl
+from datetime import datetime,timedelta,date
 import mysql.connector
 
 #To importe from previous directory where there is mysql connection password:
@@ -29,7 +30,7 @@ crypDB = mysql.connector.connect(host=PI.myHost, user=PI.myUser, password=PI.myP
 #FUNCTIONS---------------------------------------------------------------------------------------------------------------------------------
 
 def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1day"):
-    #This function gets history data from Kucoin API in candle-sticks format and saves it in a database on MySQL. If the db already exists, gets updated.
+    #This function gets history data from Kucoin API in candle-sticks format and saves it into a database on MySQL. If the db already exists, gets updated.
 
     apiUrl = "https://api.kucoin.com"
     
@@ -56,7 +57,7 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
     for row in range(len(finalDF)):
         unixToDate = datetime.fromtimestamp(int(finalDF.xs(row)['time'])).strftime('%Y-%m-%d %H:%M:%S')
         finalDF.xs(row)['time'] = unixToDate
-    print(finalDF)
+    #print(finalDF)
     #print(finalDF.at[2, 'time'])
 
     #finalDF.to_excel(f'{sym}.xlsx')
@@ -80,7 +81,7 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
 
     #If exception happens it should be because there is already a table with same name so we just update it:
     except:
-        print(f'Probably table {symToSQL} already exists.')
+        print(f'Cannot create table {symToSQL}. Probably already exists.')
 
     #Save each row in the db:
     for row in range(len(finalDF)):
@@ -126,13 +127,8 @@ def MySQL_getTable(sym = 'BTC-USDT'):
     #Transform result into a data frame:
     columns = ["time","open","close","high","low","volume","turnover"]
     df = pd.DataFrame(result, columns = columns)
-
-    #print(result[0])
-    #print(result[0][2])
-
-    #print(df.iloc[:3])
     
-    print(f'Finished get table {symToSQL}')
+    #print(f'Finished get table {symToSQL}')
     return df
 
 
@@ -146,25 +142,178 @@ def KC_getMarketsList():
 
 
 
-def KC_getCurrenciesPairs(market):
+def KC_getCurrenciePairs(market):
     apiUrl = "https://api.kucoin.com"
     parameters = {"market":market}
     data = requests.get(f"{apiUrl}/api/v1/symbols", params = parameters)
     df = pd.DataFrame(data.json(), columns = ['data'])
-    print(df)
-    print(df.loc[0])
-    return df
 
+    resultList = []
+    for x in range(len(df)):
+        resultList.append(df.loc[x][0]['symbol'])
+    
+    print(resultList)
+    #print(resultList[0])
+    return resultList
+
+
+
+def KC_UpdateCurrencies():
+    #This function gets all the table names in the database and updates updates their records with the function KC_getHistory
+
+    #Create cursor to comunicate with mysql:
+    myCursor = crypDB.cursor()
+
+    #Request data from mysql:
+    myCursor.execute('SHOW TABLES;')
+    tableList = myCursor.fetchall()
+    print(tableList)
+
+    for pair in tableList:
+        try:
+            sym = str(pair)
+            symNew = ""
+            for letter in sym:
+                if letter == "_":
+                    symNew = symNew + "-"
+                elif letter == "'" or letter == "," or letter == "(" or letter == ")":
+                    pass
+                else:
+                    symNew = symNew + letter
+            #print(symNew.upper())
+            KC_getHistory(symNew.upper())
+
+        except:
+            #This exception is for any other tables created which are not pairs:
+            print(f"{pair} not a currencie.")
+
+    return 'done'
+
+
+
+def IsDbUpdated():
+    #This funcion finds out if the tables of the database are updated or not by checking if the table BTC_USDT is updated (as it is one of the mains ones)
+    
+    currentDay = str(date.today())
+
+    #Create cursor to comunicate with mysql:
+    myCursor = crypDB.cursor()
+
+    #Request data from mysql:
+    myCursor.execute(f"SELECT * FROM BTC_USDT WHERE TIME = '" + currentDay + "';")
+    result = myCursor.fetchall()
+
+    #Commit to mysql:
+    crypDB.commit()
+
+    #Close the cursor (Resets all results, and ensures that the cursor object has no reference to its original connection object).
+    myCursor.close()
+
+    if result:
+        print('Database is updated')
+        return True
+    else:
+        print('Database needs to update')
+        return False
+
+
+
+def DashToUnderscore(sym):
+    #This function changes "-" to "_" in a string variable
+    symNew = ""
+    for letter in sym:
+        if letter == "-":
+            symNew = symNew + "_"
+        else:
+            symNew = symNew + letter
+
+    return symNew
+
+
+
+def MySQL_CreateTable(name):
+
+    #Create cursor to comunicate with mysql:
+    myCursor = crypDB.cursor()
+
+    try:
+        myCursor.execute(
+            f"CREATE TABLE {name} (time DATETIME KEY, open FLOAT(40,20), close FLOAT(40,20), high FLOAT(40,20), low FLOAT(40,20), volume FLOAT(40,20), turnover FLOAT(40,20));"
+            )
+
+    #If exception happens it should be because there is already a table with same name so we just update it:
+    except:
+        print(f'Cannot create table {name}. Maybe it already exists.')
+    return 'done'
+
+
+
+def MySQL_InsertInTable(item,table,columns):
+    #This function saves item in a table.
+    #"item" and "columns" must be tuples of the names of the columns.
+
+    colStr = ''
+    for col in columns:
+        if col == columns[-1]:
+            colStr = colStr + col
+        else:
+            colStr = colStr + col + ', '
+    #Create cursor to comunicate with mysql:
+    myCursor = crypDB.cursor()
+
+    percent = '%s, ' * (len(columns) - 1) + '%s'
+    sql = f"INSERT INTO {table} ({colStr}) VALUES ({percent});"
+    print(sql)
+    print(item)
+
+    #We use "try" so if row already exists, doesn't give an error and keeps trying with every row in case there is new rows adding to the db:
+    try:
+        myCursor.execute(sql, item)
+    except:
+        pass
+
+    #Commit to mysql:
+    crypDB.commit()
+
+    #Close the cursor (Resets all results, and ensures that the cursor object has no reference to its original connection object).
+    myCursor.close()
+
+    return 'done'
+
+
+def MySQL_CreateTable(name,columnsSQL):#???????????????????????????????????????
+    #Create cursor to comunicate with mysql:
+    myCursor = crypDB.cursor()
+    
+    try:
+        myCursor.execute(
+            f"CREATE TABLE {name} ({columnsSQL});"
+            )
+    except:
+        pass
+
+    #Commit to mysql:
+    crypDB.commit()
+
+    #Close the cursor (Resets all results, and ensures that the cursor object has no reference to its original connection object).
+    myCursor.close()
+    return 'done'
 
 
 #TESTING---------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    #table1 = MySQL_getTable('CARR-USDT')
-    #table2 = MySQL_getTable('BTC-USDT')
+    print('Main is: connect API')
 
-    #KC_getHistory('BTC-USDT')
-    #KC_getMarketsList()
-    KC_getCurrenciesPairs('DeFi')
-    
+    #KC_getCurrenciePairs('BTC')
+    #KC_getHistory('HTR-USDT')
+    KC_getMarketsList()
+    #KC_UpdateCurrencies()
+    #IsDbUpdated()
+    #DashToUnderscore('BTC_UD-_-ST')
+
+    #cosa = ('hola', 'que pasa', 87.13)
+    #col = ('reference', 'compared', 'percentage_difference')
+    #MySQL_InsertInTable(cosa, 'compare_graphs', col)
+
 
