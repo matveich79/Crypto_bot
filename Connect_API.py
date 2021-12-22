@@ -31,6 +31,7 @@ crypDB = mysql.connector.connect(host=PI.myHost, user=PI.myUser, password=PI.myP
 
 def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1day"):
     #This function gets history data from Kucoin API in candle-sticks format and saves it into a database on MySQL. If the db already exists, gets updated.
+    #candleTime = 1min, 3min, 5min, 15min, 30min, 1hour, 2hour, 4hour, 6hour, 8hour, 12hour, 1day, 1week
 
     apiUrl = "https://api.kucoin.com"
     
@@ -51,16 +52,12 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
     columns = ["time","open","close","high","low","volume","turnover"]
     finalDF = pd.DataFrame(listOfLists, columns = columns)
 
-    #finalDF.to_excel(f'{sym}_UnixTime.xlsx')
 
     #Change time from Unix format to date format:
     for row in range(len(finalDF)):
         unixToDate = datetime.fromtimestamp(int(finalDF.xs(row)['time'])).strftime('%Y-%m-%d %H:%M:%S')
         finalDF.xs(row)['time'] = unixToDate
-    #print(finalDF)
-    #print(finalDF.at[2, 'time'])
 
-    #finalDF.to_excel(f'{sym}.xlsx')
     
     #Create table in MySQL:
     #First change "-" to "_" as MySQL doesnot accept "-" on a table name
@@ -106,6 +103,8 @@ def KC_getHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1d
 
 
 def MySQL_getTable(sym = 'BTC-USDT'):
+    #This function gets a pair from the databse.
+
     #First change "-" to "_" as MySQL doesnot accept "-" on a table name
     symToSQL = ""
     for letter in sym:
@@ -134,6 +133,8 @@ def MySQL_getTable(sym = 'BTC-USDT'):
 
 
 def KC_getMarketsList():
+    #This functions gets a list of the markets offered in kucoin
+
     apiUrl = "https://api.kucoin.com"
     data = requests.get(f"{apiUrl}/api/v1/markets")
     df = pd.DataFrame(data.json(), columns = ["data"])
@@ -143,6 +144,8 @@ def KC_getMarketsList():
 
 
 def KC_getCurrenciePairs(market):
+    #This function gets all the currencie pairs inside a certain market.
+
     apiUrl = "https://api.kucoin.com"
     parameters = {"market":market}
     data = requests.get(f"{apiUrl}/api/v1/symbols", params = parameters)
@@ -152,8 +155,8 @@ def KC_getCurrenciePairs(market):
     for x in range(len(df)):
         resultList.append(df.loc[x][0]['symbol'])
     
-    print(resultList)
-    #print(resultList[0])
+    #print(resultList)
+
     return resultList
 
 
@@ -231,23 +234,6 @@ def DashToUnderscore(sym):
 
 
 
-def MySQL_CreateTable(name):
-
-    #Create cursor to comunicate with mysql:
-    myCursor = crypDB.cursor()
-
-    try:
-        myCursor.execute(
-            f"CREATE TABLE {name} (time DATETIME KEY, open FLOAT(40,20), close FLOAT(40,20), high FLOAT(40,20), low FLOAT(40,20), volume FLOAT(40,20), turnover FLOAT(40,20));"
-            )
-
-    #If exception happens it should be because there is already a table with same name so we just update it:
-    except:
-        print(f'Cannot create table {name}. Maybe it already exists.')
-    return 'done'
-
-
-
 def MySQL_InsertInTable(item,table,columns):
     #This function saves item in a table.
     #"item" and "columns" must be tuples of the names of the columns.
@@ -281,6 +267,7 @@ def MySQL_InsertInTable(item,table,columns):
     return 'done'
 
 
+
 def MySQL_CreateTable(name,columnsSQL):#???????????????????????????????????????
     #Create cursor to comunicate with mysql:
     myCursor = crypDB.cursor()
@@ -299,21 +286,73 @@ def MySQL_CreateTable(name,columnsSQL):#???????????????????????????????????????
     myCursor.close()
     return 'done'
 
+def KC_getAllMarketHistories(market):
+    #This function downloads from Kucoin to our database all the histories of all the pairs from a certain market. It loops the function KC_getHistory to do so.
+
+    marketPairs = KC_getCurrenciePairs(market)
+    for pair in marketPairs:
+        KC_getHistory(pair)
+
+    return 'done'
+
+
+
+def KC_ShowHistory(sym = "BTC-USDT", timeStart = 0, timeEnd = 0, candleTime = "1day"):
+    #This function gets history data from Kucoin API in candle-sticks format and saves it into a database on MySQL. If the db already exists, gets updated.
+    #candleTime = 1min, 3min, 5min, 15min, 30min, 1hour, 2hour, 4hour, 6hour, 8hour, 12hour, 1day, 1week
+
+    apiUrl = "https://api.kucoin.com"
+    
+    #Request data from API:
+    parameters = {"symbol":sym, "startAt":timeStart, "endAt":timeEnd, "type":candleTime}
+    data = requests.get(f"{apiUrl}/api/v1/market/candles", params = parameters)
+    
+    #Transform request into a data frame:
+    df = pd.DataFrame(data.json(), columns = ["data"])
+    #This gives only one column and all the data on each row into a list format. Print(df) if want to see it.
+
+    #So we create a list of lists with all data:
+    listOfLists = []
+    for listGet in range(len(df)):
+        listOfLists.append(df.at[listGet, 'data'])
+    
+    #And then transform the list of lists into a proper dataFrame:
+    columns = ["time","open","close","high","low","volume","turnover"]
+    finalDF = pd.DataFrame(listOfLists, columns = columns)
+
+    #Change time from Unix format to date format:
+    for row in range(len(finalDF)):
+        unixToDate = datetime.fromtimestamp(int(finalDF.xs(row)['time'])).strftime('%Y-%m-%d %H:%M:%S')
+        finalDF.xs(row)['time'] = unixToDate
+    
+    #print(finalDF)
+
+    return finalDF
+
+
 
 #TESTING---------------------------------------------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     print('Main is: connect API')
 
-    #KC_getCurrenciePairs('BTC')
     #KC_getHistory('HTR-USDT')
-    KC_getMarketsList()
+    #KC_getMarketsList()
     #KC_UpdateCurrencies()
     #IsDbUpdated()
     #DashToUnderscore('BTC_UD-_-ST')
 
-    #cosa = ('hola', 'que pasa', 87.13)
-    #col = ('reference', 'compared', 'percentage_difference')
-    #MySQL_InsertInTable(cosa, 'compare_graphs', col)
+    #KC_getAllMarketHistories('BTC')
 
+    timeStartDate = datetime(2021, 7, 26, 21, 20) #'2021-07-26 21:20:00'
+    #timeEndDate =
+    timeStartUnix = time.mktime(timeStartDate.timetuple())
+    #timeEndUnix =
 
+    print(timeStartDate)
+    print(timeStartUnix)
+
+    timeNow = int(time.time())
+    print(timeNow)
+
+    KC_ShowHistory('BTC-USDT',timeNow-25000,timeNow,'5min')

@@ -74,25 +74,25 @@ def CompareGraphs(pairReference, pairCompare, rowRange, variance):
 
 
 def MultiCompare(target,market,rowRange,variance):
-    #Obtener una lista con varias cryptocurrencies con base USDT o BTC.
-    #Hacer el for loop que sustituye "-" por "_".
-    #Loop de CompareGraphs en varias cryptocurrencies.
-    #Guardar resultados de CompareGraphs en una tabla.
-    #Devolver fila con menor porcentaje de diferencia.
+    #This function the CompareGraphs function to compare one pair with all the ones inside a certain market.
+    #target = is the currencie pair we want to "predict". Example: 'BTC-USDT'
+    #market = using capi.KC_getMarketsList() we can obtein a list of markets we can use.
+    #rowRange = how many rows/days we want to compare at once every time.
+    #variance = til how long in the past want to lo for similarities on the other pair. It is a number of rows/days.
+
+    #First we set the values and change the "-" for "_" which is what our database admits.
     targetUnderscore = capi.DashToUnderscore(target)
     listDict = []
-    #Create a table:
-    #sqlText = 'pair_compared VARCHAR(20) KEY, percentage_difference FLOAT(6,3)'
-    #capi.MySQL_CreateTable(targetUnderscore + '_pair_difference', sqlText)
 
     #Obtein the list of cryptocurrencies:
     pairsList = capi.KC_getCurrenciePairs(market)
 
-    #Compare all the currencies with each other:
+    #Compare all the currencies pairs of the market with our pair target:
     for pair in pairsList:
         valuesList = ()
         pairComp = capi.DashToUnderscore(pair)
 
+        #This "if" avoids the target pair to compare with itself.
         if pairComp == targetUnderscore:
             pass
         else:
@@ -104,19 +104,73 @@ def MultiCompare(target,market,rowRange,variance):
                 pass
 
 
-    #And then transform the list of lists into a proper dataFrame:
+    #And then transform the listDict into a proper dataFrame:
     columns = ["target","compared","time","percentage"]
     dfComp = pd.DataFrame(listDict, columns = columns)
-    print(dfComp)
+    #print(dfComp)
 
-    print(f'Comparing with current value of: {target}')
+    #print(f'Comparing with current value of: {target}')
     #print(dfComp.min())
 
     print('This are the most similar five: ')
-    print(dfComp.nsmallest(5, 'percentage', keep = 'all'))
-    
-    return 'done'
+    result = dfComp.nsmallest(5, 'percentage', keep = 'all')
 
+    print(result)
+    return result
+
+
+def SymmetricalTriangle(pair,rowRange,variance):
+    #This function finds symmetrical triangle pattern in pair.
+
+
+    df = capi.MySQL_getTable(pair)
+    currentHighest = 0.0
+    currentLowest = 0.0
+    reachedLevel = 0
+
+    for var in range(variance + 1):
+        if reachedLevel == 2:
+            print(f'Found symmetrical triangle with {pair}')
+            return 'done'
+
+        else:
+            for x in range(3):
+                sampleDF = df.iloc[(x * rowRange) + var : (rowRange + (x * rowRange)) + var]
+                #print(sampleDF)
+                columnHigh = sampleDF['high']
+                columnLow = sampleDF['low']
+                #print(columnHigh)
+                #print(columnLow)
+                if x == 0:
+                    currentHighest = columnHigh.max()
+                    currentLowest = columnLow.min()
+                    #print(currentHighest)
+                    #print(currentLowest)
+                else:
+                    rangeHighest = columnHigh.max()
+                    rangeLowest = columnLow.min()
+                    idHighest = columnHigh.idxmax()
+                    idLowest = columnLow.idxmin()
+                    #print(rangeHighest)
+                    #print(rangeLowest)
+                    #print(idHighest)
+                    #print(idLowest)
+
+                    #The conditions are: the maximmum and minimum value of the next range have to be higher and lower
+                    # than the prior values respectively, in at least 10%
+                    # and highest value must be always older.
+                    if rangeHighest >= currentHighest * 1.1 and rangeLowest <= currentLowest * 0.9 and idHighest > idLowest:
+                        currentHighest = rangeHighest
+                        currentLowest = rangeLowest
+                        reachedLevel = x
+                    else:
+                        break
+    
+
+    if reachedLevel == 2:
+        print(f'Found symmetrical triangle with {pair}')
+
+    return
 
 
 #TESTING---------------------------------------------------------------------------------------------------------------------------------
@@ -129,8 +183,17 @@ if __name__ == "__main__":
     #cosa = ('hola', 'que pasa', 87.13)
     #col = ('reference', 'compared', 'percentage_difference')
     #capi.MySQL_InsertInTable(cosa, 'compare_graphs', col)
-    MultiCompare('CARR-USDT','USDS', 30, 200)
+    #MultiCompare('CARR-USDT','USDS', 30, 100)
 
     #CompareGraphs('SOL-USDT', 'HTR-USDT', 30, 200)
 
-
+    #SymmetricalTriangle('BTC-USDT', 20, 0)
+    
+    #pairList = capi.KC_getCurrenciePairs('USDS')
+    #for pair in pairList:
+        #try:
+            #SymmetricalTriangle(pair, 20, 5)
+        #except:
+            #pass
+    
+    

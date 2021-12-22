@@ -28,10 +28,26 @@ def GetAllMarket(market):
 #capi.KC_getMarketsList()
 #GetAllMarket('USDS')
 
-#First program checks if database is updated. If not, it will do automaticaly.
+
+#First program checks if database is updated. If not, it will do so automaticaly.
 if capi.IsDbUpdated():
     pass
 else:
     print('Updating database...')
     capi.KC_UpdateCurrencies()
     print('Database updated.')
+
+
+#Find patterns:
+
+#Symetrical triangle:
+pairList = capi.KC_getCurrenciePairs('USDS')
+for pair in pairList:
+    try:
+        SymmetricalTriangle(pair, 20, 5)
+    except:
+        pass
+
+
+
+#Generate diary inform of best cryptos to buy.
